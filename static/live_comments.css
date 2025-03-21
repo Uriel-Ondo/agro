@@ -1,0 +1,402 @@
+body {
+    font-family: 'Arial', sans-serif;
+    background: linear-gradient(135deg, #1a1a1a 0%, #2c3e50 100%);
+    color: #ffffff;
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+#main-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1; /* Prend tout l'espace disponible dans le body */
+    min-height: 0; /* Permet au conteneur de rétrécir si nécessaire */
+}
+
+.container {
+    display: flex;
+    flex: 1; /* Prend l'espace restant entre le haut et le footer */
+    padding: 10px;
+    gap: 10px;
+    overflow: hidden;
+}
+
+#main-screen {
+    flex: 2;
+    background-color: #000;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+#main-screen video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    flex: 1; /* S'assure que la vidéo prend l'espace disponible */
+}
+
+.screen-overlay {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 14px;
+    font-weight: bold;
+    z-index: 10;
+}
+
+.video-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 5px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 10;
+}
+
+#main-screen:hover .video-controls {
+    opacity: 1;
+}
+
+.video-controls button {
+    background: none;
+    border: none;
+    color: #ffffff;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 5px;
+    transition: color 0.3s, transform 0.2s;
+}
+
+.video-controls button:hover {
+    color: #3498db;
+    transform: scale(1.1);
+}
+
+.video-controls button:focus {
+    outline: 2px solid #3498db;
+}
+
+.video-controls input[type="range"] {
+    width: 100px;
+    cursor: pointer;
+    height: 5px;
+    background: #555;
+    border-radius: 5px;
+    outline: none;
+    -webkit-appearance: none;
+}
+
+.video-controls input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    background: #3498db;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.video-controls input[type="range"]::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    background: #3498db;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+#chat-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: rgba(44, 62, 80, 0.9);
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+}
+
+#chat-header {
+    background: #3498db;
+    padding: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    text-align: center;
+    border-bottom: 2px solid #2980b9;
+    flex-shrink: 0; /* Empêche le header de rétrécir */
+}
+
+#comments {
+    flex: 1; /* Prend l'espace restant dans #chat-container */
+    padding: 8px;
+    overflow-y: auto;
+    /* Supprime max-height pour permettre une adaptation dynamique */
+}
+
+.comment {
+    background: linear-gradient(135deg, #2ecc71, #27ae60);
+    padding: 8px;
+    margin-bottom: 8px;
+    border-radius: 15px;
+    position: relative;
+    max-width: 90%;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+    animation: slideIn 0.5s ease-out;
+}
+
+.comment::before {
+    content: '';
+    position: absolute;
+    top: 10px;
+    left: -10px;
+    width: 0;
+    height: 0;
+    border-right: 10px solid #2ecc71;
+    border-top: 10px solid transparent;
+    border-bottom: 10px solid transparent;
+}
+
+.comment .user {
+    color: #ffffff;
+    font-weight: bold;
+    font-size: 14px;
+    margin-bottom: 3px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.comment .time {
+    color: #ecf0f1;
+    font-size: 10px;
+    margin-bottom: 3px;
+    opacity: 0.8;
+}
+
+.comment .text {
+    color: #ffffff;
+    font-size: 12px;
+    line-height: 1.4;
+    word-wrap: break-word;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(50px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+#comment-input {
+    padding: 8px;
+    display: flex;
+    gap: 8px;
+    background: #34495e;
+    flex-shrink: 0; /* Empêche le champ de commentaire de rétrécir */
+}
+
+#new-comment {
+    flex: 1;
+    padding: 8px;
+    border: none;
+    border-radius: 5px;
+    font-size: 12px;
+}
+#new-comment:focus,
+
+#send-comment {
+    background: #2ecc71;
+    color: #fff;
+    padding: 8px;
+    border: none;
+    border-radius: 5px;
+}
+
+#send-comment:focus {
+    outline: 2px solid #fff;
+}
+
+#weather-container {
+    padding: 10px;
+    background: rgba(44, 62, 80, 0.9);
+    border-top: 2px solid #2c3e50;
+    border-radius: 0 0 10px 10px;
+    flex-shrink: 0; /* Empêche la section météo de rétrécir */
+}
+
+#weather-header {
+    background: linear-gradient(135deg, #3498db, #2980b9);
+    padding: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    text-align: center;
+    border-radius: 5px 5px 0 0;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+#weather-city {
+    width: 60%;
+    padding: 8px;
+    border: none;
+    border-radius: 5px;
+    font-size: 14px;
+    background: #ecf0f1;
+    color: #2c3e50;
+    margin: 5px 5px 5px 0;
+    transition: box-shadow 0.3s;
+}
+
+#weather-city:focus {
+    outline: 2px solid #3498db;
+    box-shadow: 0 0 5px #3498db;
+}
+
+#weather-submit, #weather-geolocation {
+    background: #2ecc71;
+    color: #fff;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 5px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.3s, transform 0.2s;
+}
+
+#weather-geolocation {
+    background: #e67e22;
+    margin-left: 5px;
+}
+
+#weather-submit:hover, #weather-geolocation:hover {
+    background: #27ae60;
+    transform: scale(1.05);
+}
+
+#weather-geolocation:hover {
+    background: #d35400;
+}
+
+#weather-submit:focus, #weather-geolocation:focus {
+    outline: 2px solid #3498db;
+}
+
+#weather-info {
+    margin-top: 10px;
+    padding: 15px;
+    background: linear-gradient(135deg, rgba(52, 73, 94, 0.95), rgba(44, 62, 80, 0.85));
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.6;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    border-left: 4px solid #2ecc71;
+    position: relative;
+    overflow: hidden;
+}
+
+#weather-info::before {
+    content: "🌤️";
+    font-size: 24px;
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    opacity: 0.7;
+}
+
+#weather-info span {
+    display: block;
+    padding-left: 35px;
+    color: #ecf0f1;
+    transition: color 0.3s;
+}
+
+#weather-info span:hover {
+    color: #2ecc71;
+}
+
+footer {
+    background: #34495e;
+    padding: 5px;
+    text-align: center;
+    font-size: 12px;
+    border-top: 2px solid #2c3e50;
+    flex-shrink: 0; /* Empêche le footer de rétrécir */
+}
+
+/* Styles pour l’écran de connexion */
+.overlay-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+}
+
+.login-container {
+    background: #2c3e50;
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    width: 90%;
+    max-width: 300px;
+}
+
+.login-container h2 {
+    margin-bottom: 15px;
+    font-size: 18px;
+}
+
+.login-container input {
+    display: block;
+    width: 100%;
+    padding: 8px;
+    margin: 8px 0;
+    border: none;
+    border-radius: 5px;
+    font-size: 14px;
+}
+
+.login-container button {
+    background: #3498db;
+    color: #fff;
+    padding: 8px 15px;
+    border: none;
+    border-radius: 5px;
+    font-size: 14px;
+    cursor: pointer;
+    margin: 5px;
+}
+
+.login-container #back-btn {
+    background: #e74c3c;
+}
+
+.login-container button:focus {
+    outline: 2px solid #fff;
+}
+/* Ajout des styles de focus pour les champs de l'écran de connexion */
+#email:focus,
+#password:focus {
+    outline: 2px solid #3498db;
+    box-shadow: 0 0 5px #3498db;
+}

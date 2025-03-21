@@ -1,0 +1,8 @@
+migrations
+.env
+venv
+services/__pycache__
+models/__pycache__
+api/__pycache__
+__pycache__
+uploads
