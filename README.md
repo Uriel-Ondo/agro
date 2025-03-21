@@ -14,11 +14,16 @@ MAIL_DEFAULT_SENDER=mail_par_defauf
 2- creer la base de donnees
 create database agri;
 
+-Alternative avec Flask-Migrate (Recommandé) Si tu veux gérer les migrations proprement, utilise Flask-Migrate :
+
+flask db init 
+flask db migrate -m "Initial migration" flask db upgrade
+
 3- creer l'environement virtuel et installer les dependances
 
 py.exe -m venv venv
 
-venv/Scripts/activate
+venv\Scripts\activate
 
 pip install -r requirements.txt
 
