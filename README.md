@@ -38,3 +38,4 @@ ollama run gemma:2b
 
 -lancer le serveur
 py.exe app.py
+

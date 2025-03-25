@@ -40,7 +40,7 @@ def detect_plant_disease(image_file, user_id):
 
         # Enregistrer dans la base de données
         from models.plant_disease import PlantDisease
-        from app import db
+        from extensions import db
         plant = PlantDisease(user_id=user_id, image_path=image_path, disease=disease, recommendation=recommendation)
         db.session.add(plant)
         db.session.commit()

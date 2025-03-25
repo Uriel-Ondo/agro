@@ -20,4 +20,4 @@ opencv-python
 numpy
 flask-os
 flask-migrate
-
+flask-cors

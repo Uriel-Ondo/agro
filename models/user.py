@@ -1,8 +1,11 @@
-from app import db
+# models/user.py
+from extensions import db  # Changé de "from app import db" à "from extensions import db"
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
+import json
 
 class User(db.Model):
+    __tablename__ = 'user'  # Défini explicitement comme 'user' au lieu de 'users'
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
@@ -12,6 +15,7 @@ class User(db.Model):
     is_online = db.Column(db.Boolean, default=False)  # Statut en ligne
     last_active = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)  # Dernière activité
     created_at = db.Column(db.DateTime, default=db.func.now())
+    favorite_cities = db.Column(db.Text, default='[]')  # Nouveau champ pour les villes favorites
 
     # Relations
     plant_diseases = db.relationship("PlantDisease", backref="user", lazy=True)
@@ -19,7 +23,7 @@ class User(db.Model):
     live_comments = db.relationship("LiveComment", backref="user", lazy=True)
     expert_sessions_as_user = db.relationship("ExpertSession", foreign_keys="ExpertSession.user_id", backref="user", lazy=True)
     expert_sessions_as_expert = db.relationship("ExpertSession", foreign_keys="ExpertSession.expert_id", backref="expert", lazy=True)
-    public_requests = db.relationship("PublicRequest", backref="user", lazy=True)  
+    public_requests = db.relationship("PublicRequest", backref="user", lazy=True)
 
     def set_password(self, password):
         """
@@ -40,6 +44,41 @@ class User(db.Model):
         self.is_online = status
         self.last_active = datetime.utcnow()
         db.session.commit()
+
+    def get_favorite_cities(self):
+        """
+        Retourne la liste des villes favorites sous forme de liste Python.
+        """
+        return json.loads(self.favorite_cities)
+
+    def set_favorite_cities(self, cities):
+        """
+        Définit la liste des villes favorites et la sauvegarde sous forme JSON.
+        """
+        self.favorite_cities = json.dumps(cities)
+        db.session.commit()
+
+    def add_favorite_city(self, city):
+        """
+        Ajoute une ville aux favoris si elle n'est pas déjà présente.
+        """
+        cities = self.get_favorite_cities()
+        if city not in cities:
+            cities.append(city)
+            self.set_favorite_cities(cities)
+            return True
+        return False
+
+    def remove_favorite_city(self, city):
+        """
+        Supprime une ville des favoris si elle est présente.
+        """
+        cities = self.get_favorite_cities()
+        if city in cities:
+            cities.remove(city)
+            self.set_favorite_cities(cities)
+            return True
+        return False
 
     def __repr__(self):
         """

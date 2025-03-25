@@ -1,9 +1,11 @@
 from models.chat_message import ChatMessage
-from app import db
+from models.user import User
+from extensions import db
 import requests
 import logging
 from services.knowledge_base import get_static_response
 from services.plant_service import detect_plant_disease
+from sqlalchemy.exc import IntegrityError, DataError
 
 # Configurer le logging
 logging.basicConfig(level=logging.DEBUG)
@@ -12,12 +14,21 @@ logger = logging.getLogger(__name__)
 # URL de l'API Ollama
 OLLAMA_API_URL = "http://localhost:11434/api/chat"
 
-def process_chat_message(user_id, message, image=None):
+def process_chat_message(user_id, message, conversation_id=None, image=None):
     """
     Traite un message de l'utilisateur et génère une réponse en utilisant l'API d'Ollama avec Gemma-2b.
     Si une image est fournie, analyse l'image pour détecter une maladie des plantes.
     """
     try:
+        # Convertir user_id en entier
+        user_id = int(user_id)
+        
+        # Vérifier si l'utilisateur existe
+        user = User.query.get(user_id)
+        if not user:
+            logger.error(f"Utilisateur avec ID {user_id} non trouvé.")
+            raise ValueError("Utilisateur non trouvé.")
+
         # Vérifier si une image est fournie
         image_description = ""
         if image:
@@ -44,7 +55,7 @@ def process_chat_message(user_id, message, image=None):
             # Préparer la requête pour l'API Ollama
             logger.debug(f"Envoi de la requête à Ollama avec le message : {full_message}")
             payload = {
-                "model": "gemma:2b",  # Nom du modèle dans Ollama (ajustez si nécessaire)
+                "model": "gemma:2b",
                 "messages": [
                     {
                         "role": "system",
@@ -73,24 +84,52 @@ def process_chat_message(user_id, message, image=None):
             response = response[:500] + "..."
 
         # Enregistrer dans la base de données
-        chat = ChatMessage(user_id=user_id, message=message, response=response)
+        chat = ChatMessage(
+            user_id=user_id,
+            message=message,
+            response=response,
+            conversation_id=conversation_id
+        )
         db.session.add(chat)
         db.session.commit()
         logger.debug(f"Message et réponse enregistrés pour l'utilisateur {user_id}.")
 
         return response
 
+    except ValueError as e:
+        logger.error(f"Erreur de validation : {e}")
+        raise
+    except IntegrityError as e:
+        db.session.rollback()
+        logger.error(f"Erreur d'intégrité lors de l'enregistrement du message : {e}")
+        raise ValueError("Erreur : utilisateur ou conversation invalide.")
+    except DataError as e:
+        db.session.rollback()
+        logger.error(f"Erreur de type de données lors de l'enregistrement du message : {e}")
+        raise ValueError("Erreur : les types de données fournis sont incorrects.")
     except requests.exceptions.RequestException as e:
+        db.session.rollback()
         logger.error(f"Erreur lors de la communication avec l'API Ollama : {e}")
         error_response = "Désolé, une erreur s'est produite avec le service de chat. Veuillez réessayer plus tard."
-        chat = ChatMessage(user_id=user_id, message=message, response=error_response)
+        chat = ChatMessage(
+            user_id=user_id,
+            message=message,
+            response=error_response,
+            conversation_id=conversation_id
+        )
         db.session.add(chat)
         db.session.commit()
         return error_response
     except Exception as e:
+        db.session.rollback()
         logger.error(f"Erreur inattendue dans process_chat_message : {e}")
         error_response = "Désolé, une erreur s'est produite. Veuillez réessayer plus tard."
-        chat = ChatMessage(user_id=user_id, message=message, response=error_response)
+        chat = ChatMessage(
+            user_id=user_id,
+            message=message,
+            response=error_response,
+            conversation_id=conversation_id
+        )
         db.session.add(chat)
         db.session.commit()
         return error_response

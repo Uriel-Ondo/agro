@@ -1,5 +1,6 @@
-from app import db
+#from app import db
 from datetime import datetime
+from extensions import db  
 
 class PublicRequest(db.Model):
     id = db.Column(db.Integer, primary_key=True)

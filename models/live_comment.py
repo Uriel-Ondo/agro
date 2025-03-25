@@ -1,4 +1,5 @@
-from app import db
+#from app import db
+from extensions import db  
 
 class LiveComment(db.Model):
     id = db.Column(db.Integer, primary_key=True)

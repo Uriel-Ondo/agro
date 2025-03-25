@@ -1,7 +1,7 @@
 from flask_restx import Namespace, Resource, fields
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from models.user import User
-from app import db, mail
+from extensions import db, mail
 from flask_mail import Message
 from services.auth_service import register_user, login_user
 
@@ -27,6 +27,13 @@ login_model = ns.model("Login", {
 update_profile_model = ns.model("UpdateProfile", {
     "username": fields.String(required=False, description="Nouveau nom d'utilisateur"),
     "email": fields.String(required=False, description="Nouvel e-mail")
+})
+
+profile_model = ns.model("Profile", {
+    "username": fields.String,
+    "email": fields.String,
+    "role": fields.String,
+    "is_admin": fields.Boolean
 })
 
 # Modèle pour la réinitialisation du mot de passe
@@ -85,27 +92,29 @@ class Login(Resource):
         return {"message": "Identifiants invalides"}, 401
 
 # Endpoint pour le profil utilisateur
+# Endpoint pour le profil utilisateur
 @ns.route("/profile")
 class Profile(Resource):
     @jwt_required()
+    @ns.marshal_with(profile_model)
     def get(self):
         # Récupérer l'identité de l'utilisateur à partir du token JWT
         user_id = get_jwt_identity()
-        user = User.query.get(int(user_id))  # Convertir en entier pour interroger la base de données
+        user = User.query.get_or_404(int(user_id))  # Convertir en entier et gérer 404
 
-        if user:
-            return {"username": user.username, "email": user.email, "role": user.role}, 200
-        return {"message": "Utilisateur non trouvé"}, 404
+        return {
+            "username": user.username,
+            "email": user.email,
+            "role": user.role,
+            "is_admin": user.is_admin
+        }, 200
 
     @jwt_required()
     @ns.expect(update_profile_model)
     def put(self):
         # Récupérer l'identité de l'utilisateur à partir du token JWT
         user_id = get_jwt_identity()
-        user = User.query.get(int(user_id))
-
-        if not user:
-            return {"message": "Utilisateur non trouvé"}, 404
+        user = User.query.get_or_404(int(user_id))
 
         # Récupérer les données de mise à jour
         data = ns.payload

@@ -1,5 +1,5 @@
 from models.user import User
-from app import db
+from extensions import db
 
 def register_user(username, email, password, role):
     user = User(username=username, email=email, role=role)

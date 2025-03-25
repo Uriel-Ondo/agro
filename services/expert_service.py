@@ -1,7 +1,7 @@
 from models.public_request import PublicRequest
 from models.expert_session import ExpertSession
 from models.user import User
-from app import db, socketio
+from extensions import db, socketio
 import os
 from datetime import datetime
 import logging
