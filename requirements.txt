@@ -21,3 +21,6 @@ numpy
 flask-os
 flask-migrate
 flask-cors
+keras
+matplotlib
+scikit-learn

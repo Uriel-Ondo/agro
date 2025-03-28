@@ -16,7 +16,7 @@ OLLAMA_API_URL = "http://localhost:11434/api/chat"
 
 def process_chat_message(user_id, message, conversation_id=None, image=None):
     """
-    Traite un message de l'utilisateur et génère une réponse en utilisant l'API d'Ollama avec Gemma-2b.
+    Traite un message de l'utilisateur et génère une réponse structurée en utilisant l'API d'Ollama avec Gemma-2b.
     Si une image est fournie, analyse l'image pour détecter une maladie des plantes.
     """
     try:
@@ -29,37 +29,61 @@ def process_chat_message(user_id, message, conversation_id=None, image=None):
             logger.error(f"Utilisateur avec ID {user_id} non trouvé.")
             raise ValueError("Utilisateur non trouvé.")
 
+        # Initialiser la réponse finale
+        response_parts = []
+
+        # Ajouter une introduction standard
+        response_parts.append("### AgriBot\nJe suis votre assistant agricole expert. Voici ma réponse :")
+
         # Vérifier si une image est fournie
-        image_description = ""
         if image:
             logger.debug("Analyse de l'image pour détecter une maladie des plantes...")
             result = detect_plant_disease(image, user_id)
             disease = result["disease"]
+            confidence = result.get("confidence", 0)
             recommendation = result["recommendation"]
-            image_description = f"L'image montre une plante atteinte de : {disease}. Recommandation : {recommendation}."
-            logger.debug(f"Résultat de l'analyse de l'image : {image_description}")
+
+            # Structurer l'analyse de l'image
+            image_response = (
+                "\n### Analyse de l'image\n"
+                f"- **Maladie détectée** : {disease}\n"
+                f"- **Confiance** : {confidence * 100:.2f}%\n"
+                f"- **Recommandation** : {recommendation}"
+            )
+            response_parts.append(image_response)
+            logger.debug(f"Résultat de l'analyse de l'image : {image_response}")
 
         # Vérifier si une réponse statique est disponible
         static_response = get_static_response(message)
         if static_response:
             logger.debug(f"Réponse statique trouvée : {static_response}")
-            response = static_response
-            if image_description:
-                response = f"{image_description}\n\nConcernant votre question : {response}"
+            if response_parts and image:  # Si une image a été analysée
+                response_parts.append(
+                    "\n### Réponse à votre question\n"
+                    f"{static_response}"
+                )
+            else:
+                response_parts.append(f"\n### Réponse\n{static_response}")
         else:
-            # Combiner le message et la description de l'image (si présente)
+            # Préparer le message pour Ollama
             full_message = message
-            if image_description:
-                full_message = f"{image_description}\n\nUtilisateur : {message}"
+            if response_parts and image:  # Si une image a été analysée
+                full_message = f"{response_parts[1]}\n\nUtilisateur : {message}"
 
-            # Préparer la requête pour l'API Ollama
+            # Préparer la requête pour l'API Ollama avec une instruction claire
             logger.debug(f"Envoi de la requête à Ollama avec le message : {full_message}")
             payload = {
                 "model": "gemma:2b",
                 "messages": [
                     {
                         "role": "system",
-                        "content": "Vous êtes AgriBot, un assistant agricole expert. Vous aidez les agriculteurs avec des conseils pratiques sur la plantation, l'entretien des cultures, la gestion des sols, les engrais, les maladies des plantes, et plus encore. Répondez de manière claire, concise et conversationnelle."
+                        "content": (
+                            "Vous êtes AgriBot, un assistant agricole expert. Votre rôle est de fournir des conseils pratiques et précis sur la plantation, "
+                            "l'entretien des cultures, la gestion des sols, les engrais, et les maladies des plantes. Répondez de manière structurée et concise :\n"
+                            "- Utilisez des en-têtes avec ### pour les sections (ex. ### Services, ### Conseils pratiques).\n"
+                            "- Présentez les informations sous forme de listes avec - pour chaque point.\n"
+                            "- Soyez clair, pratique et conversationnel."
+                        )
                     },
                     {
                         "role": "user",
@@ -74,27 +98,39 @@ def process_chat_message(user_id, message, conversation_id=None, image=None):
             response = requests.post(OLLAMA_API_URL, json=payload)
             response.raise_for_status()
 
-            # Extraire la réponse
+            # Extraire et structurer la réponse
             response_data = response.json()
-            response = response_data["message"]["content"].strip()
-            logger.debug(f"Réponse d'Ollama : {response}")
+            ollama_response = response_data["message"]["content"].strip()
+            logger.debug(f"Réponse d'Ollama : {ollama_response}")
+
+            # Ajouter la réponse d'Ollama
+            if response_parts and image:  # Si une image a été analysée
+                response_parts.append(
+                    "\n### Réponse à votre question\n"
+                    f"{ollama_response}"
+                )
+            else:
+                response_parts.append(f"\n{ollama_response}")
+
+        # Combiner les parties en une réponse finale
+        final_response = "\n".join(response_parts)
 
         # Limiter la longueur de la réponse
-        if len(response) > 500:
-            response = response[:500] + "..."
+        if len(final_response) > 500:
+            final_response = final_response[:500] + "... (réponse tronquée)"
 
         # Enregistrer dans la base de données
         chat = ChatMessage(
             user_id=user_id,
             message=message,
-            response=response,
+            response=final_response,
             conversation_id=conversation_id
         )
         db.session.add(chat)
         db.session.commit()
         logger.debug(f"Message et réponse enregistrés pour l'utilisateur {user_id}.")
 
-        return response
+        return final_response
 
     except ValueError as e:
         logger.error(f"Erreur de validation : {e}")
@@ -110,7 +146,12 @@ def process_chat_message(user_id, message, conversation_id=None, image=None):
     except requests.exceptions.RequestException as e:
         db.session.rollback()
         logger.error(f"Erreur lors de la communication avec l'API Ollama : {e}")
-        error_response = "Désolé, une erreur s'est produite avec le service de chat. Veuillez réessayer plus tard."
+        error_response = (
+            "### AgriBot\n"
+            "\n### Erreur\n"
+            "- Désolé, une erreur s'est produite avec le service de chat.\n"
+            "- Veuillez réessayer plus tard."
+        )
         chat = ChatMessage(
             user_id=user_id,
             message=message,
@@ -123,7 +164,12 @@ def process_chat_message(user_id, message, conversation_id=None, image=None):
     except Exception as e:
         db.session.rollback()
         logger.error(f"Erreur inattendue dans process_chat_message : {e}")
-        error_response = "Désolé, une erreur s'est produite. Veuillez réessayer plus tard."
+        error_response = (
+            "### AgriBot\n"
+            "\n### Erreur\n"
+            "- Désolé, une erreur inattendue s'est produite.\n"
+            "- Veuillez réessayer plus tard."
+        )
         chat = ChatMessage(
             user_id=user_id,
             message=message,
