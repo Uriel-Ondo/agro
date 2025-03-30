@@ -43,6 +43,36 @@ body {
     flex: 1; /* S'assure que la vidéo prend l'espace disponible */
 }
 
+/* Style pour le sélecteur de chaînes */
+#channel-selector {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.7);
+    color: #ffffff;
+    border: none;
+    border-radius: 5px;
+    padding: 5px 10px;
+    font-size: 14px;
+    cursor: pointer;
+    z-index: 10;
+    transition: background 0.3s, box-shadow 0.3s;
+}
+
+#channel-selector:focus {
+    outline: 2px solid #3498db;
+    box-shadow: 0 0 5px #3498db;
+}
+
+#channel-selector:hover {
+    background: rgba(0, 0, 0, 0.9);
+}
+
+#channel-selector option {
+    background: #2c3e50;
+    color: #ffffff;
+}
+
 .screen-overlay {
     position: absolute;
     top: 10px;
@@ -144,7 +174,6 @@ body {
     flex: 1; /* Prend l'espace restant dans #chat-container */
     padding: 8px;
     overflow-y: auto;
-    /* Supprime max-height pour permettre une adaptation dynamique */
 }
 
 .comment {
@@ -218,7 +247,11 @@ body {
     border-radius: 5px;
     font-size: 12px;
 }
-#new-comment:focus,
+
+#new-comment:focus {
+    outline: 2px solid #3498db;
+    box-shadow: 0 0 5px #3498db;
+}
 
 #send-comment {
     background: #2ecc71;
@@ -394,9 +427,263 @@ footer {
 .login-container button:focus {
     outline: 2px solid #fff;
 }
-/* Ajout des styles de focus pour les champs de l'écran de connexion */
+
+/* Ajout des styles de focus pour les champs de l’écran de connexion */
 #email:focus,
 #password:focus {
     outline: 2px solid #3498db;
     box-shadow: 0 0 5px #3498db;
+}
+
+/* Ajustements responsives */
+@media (max-width: 768px) {
+    .container {
+        flex-direction: column;
+        padding: 5px;
+    }
+
+    #main-screen,
+    #chat-container {
+        flex: none;
+        width: 100%;
+    }
+
+    #main-screen {
+        height: 50vh; /* Réduit la hauteur de la vidéo sur petits écrans */
+    }
+
+    #channel-selector {
+        top: 5px;
+        right: 5px;
+        font-size: 12px;
+        padding: 4px 8px;
+    }
+
+    .video-controls {
+        padding: 3px;
+        gap: 5px;
+    }
+
+    .video-controls button {
+        font-size: 14px;
+    }
+
+    .video-controls input[type="range"] {
+        width: 80px;
+    }
+
+    #comments {
+        padding: 5px;
+    }
+
+    .comment {
+        font-size: 10px;
+        padding: 6px;
+    }
+
+    #new-comment {
+        font-size: 10px;
+    }
+
+    #weather-city {
+        width: 50%;
+        font-size: 12px;
+    }
+
+    #weather-submit, #weather-geolocation {
+        padding: 6px 8px;
+        font-size: 12px;
+    }
+}
+
+@media (max-width: 400px) {
+    #main-screen {
+        height: 40vh;
+    }
+
+    #channel-selector {
+        font-size: 10px;
+        padding: 3px 6px;
+    }
+
+    .video-controls input[type="range"] {
+        width: 60px;
+    }
+
+    #weather-city {
+        width: 45%;
+        font-size: 10px;
+    }
+
+    #weather-info {
+        font-size: 12px;
+        padding: 10px;
+    }
+}
+/* (Styles existants inchangés jusqu'à la fin) */
+
+/* Bouton flottant du chatbot */
+.chatbot-btn {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, #9c27b0, #7b1fa2); /* Violet pour le chatbot */
+    color: #ffffff;
+    border: none;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    font-size: 24px;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+    transition: transform 0.3s, box-shadow 0.3s;
+    z-index: 50;
+}
+
+.chatbot-btn:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.6);
+}
+
+.chatbot-btn:focus {
+    outline: 2px solid #ffffff;
+}
+
+/* Fenêtre modale du chatbot */
+.chatbot-container {
+    background: #2c3e50;
+    padding: 15px;
+    border-radius: 10px;
+    width: 90%;
+    max-width: 400px;
+    display: flex;
+    flex-direction: column;
+    max-height: 80vh;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+}
+
+.chatbot-header {
+    background: #9c27b0;
+    padding: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    text-align: center;
+    border-radius: 5px 5px 0 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #ffffff;
+}
+
+.chatbot-header button {
+    background: none;
+    border: none;
+    color: #ffffff;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 5px;
+}
+
+.chatbot-header button:focus {
+    outline: 2px solid #ffffff;
+}
+
+.chatbot-messages {
+    flex: 1;
+    padding: 10px;
+    overflow-y: auto;
+    background: rgba(44, 62, 80, 0.9);
+    border-radius: 5px;
+    margin: 10px 0;
+}
+
+.chatbot-messages .message {
+    padding: 8px;
+    margin-bottom: 8px;
+    border-radius: 5px;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.chatbot-messages .user-message {
+    background: #3498db;
+    align-self: flex-end;
+    max-width: 80%;
+}
+
+.chatbot-messages .bot-message {
+    background: #2ecc71;
+    align-self: flex-start;
+    max-width: 80%;
+}
+
+.chatbot-input {
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    background: #34495e;
+    border-radius: 0 0 5px 5px;
+}
+
+#chatbot-input {
+    flex: 1;
+    padding: 8px;
+    border: none;
+    border-radius: 5px;
+    font-size: 12px;
+}
+
+#chatbot-input:focus {
+    outline: 2px solid #3498db;
+    box-shadow: 0 0 5px #3498db;
+}
+
+#chatbot-send {
+    background: #2ecc71;
+    color: #fff;
+    padding: 8px;
+    border: none;
+    border-radius: 5px;
+}
+
+#chatbot-send:focus {
+    outline: 2px solid #fff;
+}
+
+/* Ajustements responsifs (ajoutés aux media queries existants) */
+@media (max-width: 768px) {
+    .chatbot-btn {
+        width: 40px;
+        height: 40px;
+        font-size: 20px;
+        bottom: 15px;
+        right: 15px;
+    }
+
+    .chatbot-container {
+        max-width: 90%;
+        max-height: 70vh;
+    }
+
+    .chatbot-messages {
+        font-size: 10px;
+    }
+
+    #chatbot-input {
+        font-size: 10px;
+    }
+}
+
+@media (max-width: 400px) {
+    .chatbot-btn {
+        width: 35px;
+        height: 35px;
+        font-size: 18px;
+        bottom: 10px;
+        right: 10px;
+    }
+
+    .chatbot-container {
+        max-height: 60vh;
+    }
 }

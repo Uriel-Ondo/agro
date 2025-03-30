@@ -1,5 +1,6 @@
 let token = null;
 let tokenExpiration = null;
+let hls = null; // Instance HLS globale
 
 // Éléments de l’écran de connexion
 const loginScreen = document.getElementById('login-screen');
@@ -12,6 +13,7 @@ let loginFocusIndex = 0;
 
 // Éléments de l’écran principal
 const video = document.getElementById('live-video');
+const channelSelector = document.getElementById('channel-selector');
 const playPauseBtn = document.getElementById('play-pause');
 const replayBtn = document.getElementById('replay');
 const rewindBtn = document.getElementById('rewind');
@@ -22,30 +24,45 @@ const volumeBar = document.getElementById('volume-bar');
 const fullscreenBtn = document.getElementById('fullscreen');
 const newCommentInput = document.getElementById('new-comment');
 const sendCommentBtn = document.getElementById('send-comment');
-// Éléments météo
 const weatherCityInput = document.getElementById('weather-city');
 const weatherSubmitBtn = document.getElementById('weather-submit');
 const weatherGeoBtn = document.getElementById('weather-geolocation');
 const weatherInfo = document.getElementById('weather-info');
 
+// Éléments du chatbot
+const chatbotBtn = document.getElementById('chatbot-btn');
+const chatbotModal = document.getElementById('chatbot-modal');
+const chatbotClose = document.getElementById('chatbot-close');
+const chatbotInput = document.getElementById('chatbot-input');
+const chatbotSend = document.getElementById('chatbot-send');
+const chatbotMessages = document.getElementById('chatbot-messages');
+const chatbotControls = [chatbotInput, chatbotSend, chatbotClose];
+let chatbotFocusIndex = 0;
+
 // Regrouper les éléments par section pour une navigation bidimensionnelle
-const videoControls = [replayBtn, playPauseBtn, rewindBtn, forwardBtn, muteBtn, volumeBar, fullscreenBtn];
+const videoControls = [channelSelector, replayBtn, playPauseBtn, rewindBtn, forwardBtn, muteBtn, volumeBar, fullscreenBtn];
 const commentControls = [newCommentInput, sendCommentBtn];
 const weatherControls = [weatherCityInput, weatherSubmitBtn, weatherGeoBtn];
 const controlSections = [videoControls, commentControls, weatherControls];
 
-// Index pour la section et l'élément dans la section
+// Index pour la section et l’élément dans la section
 let currentSectionIndex = 0;
 let currentElementIndex = 0;
 
 // Fonction pour mettre à jour le focus
 function updateFocus() {
-    const currentSection = controlSections[currentSectionIndex];
-    const element = currentSection[currentElementIndex];
-    element.focus();
+    if (chatbotModal && chatbotModal.style.display === 'flex') {
+        chatbotControls[chatbotFocusIndex].focus();
+    } else if (loginScreen.style.display !== 'none') {
+        loginControls[loginFocusIndex].focus();
+    } else {
+        const currentSection = controlSections[currentSectionIndex];
+        const element = currentSection[currentElementIndex];
+        element.focus();
+    }
 }
 
-// Forcer l'ouverture du clavier virtuel sur les Smart TVs
+// Forcer l’ouverture du clavier virtuel sur les Smart TVs
 function ensureKeyboardOpens(inputElement) {
     inputElement.addEventListener('focus', () => {
         inputElement.dispatchEvent(new Event('click', { bubbles: true }));
@@ -57,6 +74,7 @@ ensureKeyboardOpens(emailInput);
 ensureKeyboardOpens(passwordInput);
 ensureKeyboardOpens(newCommentInput);
 ensureKeyboardOpens(weatherCityInput);
+ensureKeyboardOpens(chatbotInput);
 
 // Gérer le focus après la saisie
 newCommentInput.addEventListener('blur', () => {
@@ -81,8 +99,13 @@ passwordInput.addEventListener('blur', () => {
     loginControls[loginFocusIndex].focus();
 });
 
+chatbotInput.addEventListener('blur', () => {
+    chatbotFocusIndex = 1; // chatbotSend
+    updateFocus();
+});
+
 // Détecter la saisie pour débogage
-[newCommentInput, weatherCityInput, emailInput, passwordInput].forEach(input => {
+[newCommentInput, weatherCityInput, emailInput, passwordInput, chatbotInput].forEach(input => {
     input.addEventListener('input', () => {
         console.log('Saisie détectée dans', input.id, ':', input.value);
     });
@@ -92,7 +115,31 @@ passwordInput.addEventListener('blur', () => {
 updateFocus();
 
 document.addEventListener('keydown', (e) => {
-    if (loginScreen.style.display !== 'none') {
+    if (chatbotModal && chatbotModal.style.display === 'flex') {
+        switch (e.key) {
+            case 'ArrowUp':
+            case 'ArrowLeft':
+                chatbotFocusIndex = (chatbotFocusIndex - 1 + chatbotControls.length) % chatbotControls.length;
+                updateFocus();
+                e.preventDefault();
+                break;
+            case 'ArrowDown':
+            case 'ArrowRight':
+                chatbotFocusIndex = (chatbotFocusIndex + 1) % chatbotControls.length;
+                updateFocus();
+                e.preventDefault();
+                break;
+            case 'Enter':
+                if (chatbotControls[chatbotFocusIndex] === chatbotSend) chatbotSend.click();
+                else if (chatbotControls[chatbotFocusIndex] === chatbotClose) chatbotClose.click();
+                e.preventDefault();
+                break;
+            case 'Escape':
+                closeChatbotModal();
+                e.preventDefault();
+                break;
+        }
+    } else if (loginScreen.style.display !== 'none') {
         switch (e.key) {
             case 'ArrowUp':
                 loginFocusIndex = (loginFocusIndex - 1 + loginControls.length) % loginControls.length;
@@ -151,9 +198,8 @@ document.addEventListener('keydown', (e) => {
                 break;
             case 'Enter':
                 const element = currentSection[currentElementIndex];
-                if (element.tagName !== 'INPUT') {
-                    element.click();
-                }
+                if (element === chatbotBtn) chatbotBtn.click();
+                else if (element.tagName !== 'INPUT' && element.tagName !== 'SELECT') element.click();
                 e.preventDefault();
                 break;
             case 'Escape':
@@ -166,6 +212,48 @@ document.addEventListener('keydown', (e) => {
         }
     }
 });
+
+// Fonction pour charger le flux vidéo
+function loadVideoStream(channel) {
+    fetch(`http://localhost:5000/live/stream/${channel}`)
+        .then(response => {
+            if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+            return response.json();
+        })
+        .then(data => {
+            const streamUrl = data.stream_url;
+            console.log('URL du flux récupérée:', streamUrl);
+
+            if (hls) {
+                hls.destroy(); // Nettoyer l’instance précédente
+                hls = null;
+            }
+
+            if (streamUrl.endsWith('.mp4')) {
+                video.src = streamUrl;
+                video.load();
+                video.play().catch(err => console.error('Erreur de lecture MP4:', err));
+            } else if (Hls.isSupported()) {
+                hls = new Hls();
+                hls.loadSource(streamUrl);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    console.log('Manifest HLS chargé');
+                    video.play().catch(err => console.error('Erreur de lecture HLS:', err));
+                });
+                hls.on(Hls.Events.ERROR, (event, data) => {
+                    console.error('Erreur HLS:', data);
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = streamUrl;
+                video.load();
+                video.play().catch(err => console.error('Erreur de lecture native:', err));
+            } else {
+                console.error('HLS non supporté sur cet appareil');
+            }
+        })
+        .catch(error => console.error('Erreur lors de la récupération du flux:', error));
+}
 
 // Contrôles vidéo
 playPauseBtn.addEventListener('click', () => {
@@ -189,17 +277,21 @@ rewindBtn.addEventListener('click', () => {
 });
 
 forwardBtn.addEventListener('click', () => {
-    video.currentTime = Math.min(video.duration, video.currentTime + 10);
+    video.currentTime = Math.min(video.duration || Infinity, video.currentTime + 10);
 });
 
 video.addEventListener('timeupdate', () => {
-    const value = (video.currentTime / video.duration) * 100;
-    seekBar.value = value;
+    if (video.duration) {
+        const value = (video.currentTime / video.duration) * 100;
+        seekBar.value = value;
+    }
 });
 
 seekBar.addEventListener('input', () => {
-    const time = video.duration * (seekBar.value / 100);
-    video.currentTime = time;
+    if (video.duration) {
+        const time = video.duration * (seekBar.value / 100);
+        video.currentTime = time;
+    }
 });
 
 muteBtn.addEventListener('click', () => {
@@ -209,7 +301,7 @@ muteBtn.addEventListener('click', () => {
 
 volumeBar.addEventListener('input', () => {
     video.volume = volumeBar.value;
-    video.muted = volumeBar.value === 0;
+    video.muted = volumeBar.value == 0;
     muteBtn.innerHTML = video.muted ? '<i class="fas fa-volume-mute"></i>' : '<i class="fas fa-volume-up"></i>';
 });
 
@@ -219,6 +311,13 @@ fullscreenBtn.addEventListener('click', () => {
     } else {
         document.exitFullscreen();
     }
+});
+
+// Changement de chaîne
+channelSelector.addEventListener('change', () => {
+    const selectedChannel = channelSelector.value;
+    console.log('Changement de chaîne vers:', selectedChannel);
+    loadVideoStream(selectedChannel);
 });
 
 // Gestion de la connexion
@@ -322,9 +421,7 @@ function sendCommentRequest(commentText) {
             console.log('Token expiration mise à jour à:', tokenExpiration);
             if (!socket || !socket.connected) {
                 fetch('http://localhost:5000/auth/me', {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
+                    headers: { 'Authorization': `Bearer ${token}` }
                 })
                 .then(response => response.json())
                 .then(userData => {
@@ -444,6 +541,105 @@ function displayWeather(data) {
     }
 }
 
+// Gestion du chatbot
+chatbotBtn.addEventListener('click', () => {
+    if (!isTokenValid()) {
+        token = null;
+        tokenExpiration = null;
+        loginScreen.style.display = 'flex';
+        loginControls[0].focus();
+    } else {
+        openChatbotModal();
+    }
+});
+
+chatbotClose.addEventListener('click', () => {
+    closeChatbotModal();
+});
+
+chatbotSend.addEventListener('click', () => {
+    const message = chatbotInput.value.trim();
+    if (message) {
+        sendChatbotMessage(message);
+    }
+});
+
+function openChatbotModal() {
+    chatbotModal.style.display = 'flex';
+    chatbotFocusIndex = 0;
+    updateFocus();
+    fetchChatbotHistory();
+}
+
+function closeChatbotModal() {
+    chatbotModal.style.display = 'none';
+    currentSectionIndex = 0;
+    currentElementIndex = 0;
+    updateFocus();
+}
+
+function addChatbotMessage(message, isUser = false) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+    messageDiv.textContent = message;
+    chatbotMessages.appendChild(messageDiv);
+    chatbotMessages.scrollTop = chatbotMessages.scrollHeight;
+}
+
+function sendChatbotMessage(message) {
+    if (!isTokenValid()) {
+        token = null;
+        tokenExpiration = null;
+        loginScreen.style.display = 'flex';
+        loginControls[0].focus();
+        return;
+    }
+    addChatbotMessage(message, true);
+    fetch('http://localhost:5000/chat/send', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ message }) // Suppression de conversation_id
+    })
+    .then(response => {
+        if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+        return response.json();
+    })
+    .then(data => {
+        addChatbotMessage(data.response);
+        chatbotInput.value = '';
+        chatbotFocusIndex = 0;
+        updateFocus();
+    })
+    .catch(error => {
+        console.error('Erreur envoi message chatbot:', error);
+        addChatbotMessage('Erreur : impossible de contacter le chatbot.');
+    });
+}
+
+function fetchChatbotHistory() {
+    if (!isTokenValid()) return;
+    fetch('http://localhost:5000/chat/history', {
+        headers: { 'Authorization': `Bearer ${token}` }
+    })
+    .then(response => {
+        if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+        return response.json();
+    })
+    .then(data => {
+        chatbotMessages.innerHTML = '';
+        data.forEach(conv => {
+            conv.messages.forEach(msg => {
+                addChatbotMessage(msg.message, true);
+                addChatbotMessage(msg.response);
+            });
+        });
+    })
+    .catch(error => console.error('Erreur récupération historique:', error));
+}
+
 // WebSocket pour les commentaires en temps réel
 let socket;
 
@@ -451,7 +647,7 @@ function initializeWebSocket() {
     if (typeof io === 'undefined') {
         console.error('Socket.IO non chargé. Vérifiez la balise <script> dans live_comments.html');
         const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.js';
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js';
         script.onload = () => {
             console.log('Socket.IO chargé avec succès via fallback');
             setupWebSocket();
@@ -560,14 +756,15 @@ window.addEventListener('resize', () => {
     }
 });
 
-// Initialisation immédiate du WebSocket
+// Initialisation immédiate
 initializeWebSocket();
 
-// Initialisation au chargement pour le reste
+// Initialisation au chargement
 window.addEventListener('load', () => {
     console.log('Chargement de la page');
     fetchWeatherByGeolocation();
     fetchInitialComments();
+    loadVideoStream(channelSelector.value); // Charger le flux par défaut
     const commentsContainer = document.getElementById('comments');
     if (commentsContainer) {
         commentsContainer.scrollTop = commentsContainer.scrollHeight;
