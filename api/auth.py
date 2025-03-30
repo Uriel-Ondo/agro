@@ -1,5 +1,5 @@
 from flask_restx import Namespace, Resource, fields
-from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, decode_token
 from models.user import User
 from extensions import db, mail
 from flask_mail import Message
@@ -84,14 +84,17 @@ class Login(Resource):
         data = ns.payload
 
         # Vérifier les identifiants de l'utilisateur
-        user = login_user(data["email"], data["password"])
-        if user:
-            # Créer un token JWT
-            token = create_access_token(identity=str(user.id))  # Convertir l'ID en chaîne de caractères
-            return {"access_token": token, "role": user.role}, 200
+        result = login_user(data["email"], data["password"])
+        if result:
+            user = result["user"]  # Extraire l'instance User du dictionnaire
+            token = create_access_token(identity=str(user.id))  # Générer le token JWT
+            return {
+                "access_token": token,
+                "role": user.role,
+                "user": {"id": user.id, "username": user.username}  # Inclure des infos utilisateur
+            }, 200
         return {"message": "Identifiants invalides"}, 401
 
-# Endpoint pour le profil utilisateur
 # Endpoint pour le profil utilisateur
 @ns.route("/profile")
 class Profile(Resource):

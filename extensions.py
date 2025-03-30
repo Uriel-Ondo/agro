@@ -7,4 +7,3 @@ from flask_socketio import SocketIO
 db = SQLAlchemy()
 jwt = JWTManager()
 mail = Mail()
-socketio = SocketIO()

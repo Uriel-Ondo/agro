@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Chemin vers le modèle fine-tuné
-MODEL_PATH = "models/mobilenetv2_plantvillage.h5"
+MODEL_PATH = "models/mobilenetv2_color.h5"
 
 # Charger le modèle fine-tuné
 try:

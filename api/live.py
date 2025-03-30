@@ -2,7 +2,7 @@ from flask_restx import Namespace, Resource, fields
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models.live_comment import LiveComment
 from models.user import User
-from extensions import db, socketio
+from extensions import db
 from datetime import datetime, timedelta
 import logging
 
@@ -12,11 +12,12 @@ logger = logging.getLogger(__name__)
 
 ns = Namespace("live", description="Commentaires en direct TNT")
 
-# Simulation des URL de flux HLS (remplacer par des URL réelles et légales)
 HLS_STREAMS = {
-    "euronews": "http://mafreebox.freebox.fr:8765/service/205/sd/master.m3u8",
-    "france24": "https://static.france24.com/Live/F24_FR_HI_HLS/live_tv.m3u8",
-    "m6": "https://www.youtube.com/embed/l8PMl7tUDIE?hl=fr&showinfo=0&color=white&rel=1&enablejsapi=1&origin=https%3A%2F%2Fwww.france24.com&autoplay=1&controls=1&modestbranding=0&disablekb=0&mute=0&embed_config=%7B%22primaryThemeColor%22%3A%22%23011d26%22%2C%22relatedChannels%22%3A%5B%22UCCCPCZNChQdGa9EkATeye4g%22%5D%2C%22autonavRelatedVideos%22%3Atrue%2C%22hideInfoBar%22%3Atrue%2C%22adsConfig%22%3A%7B%22disableAds%22%3Atrue%7D%2C%22enableIma%22%3Atrue%7D&widgetid=1&forigin=https%3A%2F%2Fwww.france24.com%2Ffr%2Fdirect&aoriginsup=1&gporigin=https%3A%2F%2Fwww.france24.com%2Ffr%2Fdirect&vf=1"
+    "tv5monde": "https://ott.tv5monde.com/Content/HLS/Live/channel(info)/index.m3u8",
+    "france24": "https://live.france24.com/hls/live/2037218/F24_EN_HI_HLS/master_5000.m3u8",
+    "info6": "https://live-hls-web-aja.getaj.net/AJA/index.m3u8",
+    "animesama": "https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8",
+    "tvanime": "https://www.w3schools.com/html/mov_bbb.mp4"
 }
 
 comment_model = ns.model("LiveComment", {
@@ -26,7 +27,6 @@ comment_model = ns.model("LiveComment", {
 @ns.route("/stream/<channel>")
 class LiveStreamResource(Resource):
     def get(self, channel):
-        """Récupérer l'URL du flux HLS pour une chaîne donnée."""
         stream_url = HLS_STREAMS.get(channel.lower(), "")
         if not stream_url:
             logger.error(f"Chaîne non trouvée : {channel}")
@@ -39,6 +39,7 @@ class LiveCommentResource(Resource):
     @jwt_required()
     @ns.expect(comment_model)
     def post(self):
+        from app import socketio  # Importer socketio ici, pas au niveau du module
         user_id = get_jwt_identity()
         data = ns.payload
         comment = LiveComment(user_id=user_id, comment=data["comment"])

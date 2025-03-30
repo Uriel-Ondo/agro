@@ -24,3 +24,4 @@ flask-cors
 keras
 matplotlib
 scikit-learn
+cloud-tpu-client
