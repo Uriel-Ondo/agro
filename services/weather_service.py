@@ -2,25 +2,30 @@ import requests
 from config import Config
 import logging
 from datetime import datetime
+import socket  # Ajout pour tester la résolution DNS
 
 # Configurer le logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+def test_dns_resolution(hostname):
+    try:
+        ip = socket.gethostbyname(hostname)
+        logger.debug(f"Résolution DNS réussie pour {hostname} : {ip}")
+        return True
+    except socket.gaierror as e:
+        logger.error(f"Échec de la résolution DNS pour {hostname} : {e}")
+        return False
+
 def get_local_weather(city=None, lat=None, lon=None):
-    """
-    Récupère les données météorologiques actuelles pour une ville ou des coordonnées.
-    Args:
-        city (str, optional): Nom de la ville (ex: "Paris").
-        lat (float, optional): Latitude.
-        lon (float, optional): Longitude.
-    Returns:
-        dict: Données météorologiques ou un dictionnaire avec une erreur.
-    """
+    # Test de résolution DNS avant la requête
+    if not test_dns_resolution("api.openweathermap.org"):
+        return {"error": "Échec de la résolution DNS pour api.openweathermap.org"}
+
     api_key = Config.WEATHER_API_KEY
     if not api_key:
         logger.error("Clé d'API météo non configurée dans Config.")
-        return {"error": "Clé d'API météo non configurée"}, 500
+        return {"error": "Clé d'API météo non configurée"}
 
     if lat and lon:
         url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&units=metric"
@@ -28,7 +33,7 @@ def get_local_weather(city=None, lat=None, lon=None):
         url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
     else:
         logger.warning("Aucune ville ou coordonnées fournies pour la requête météo.")
-        return {"error": "Ville ou coordonnées requises"}, 400
+        return {"error": "Ville ou coordonnées requises"}
 
     try:
         response = requests.get(url)
@@ -47,11 +52,14 @@ def get_local_weather(city=None, lat=None, lon=None):
             logger.debug(f"Données météo récupérées avec succès : {weather_data}")
             return weather_data
         else:
-            logger.error(f"Erreur lors de la récupération des données météo : {response.status_code} - {response.text}")
-            return {"error": "Impossible de récupérer les données météo", "status_code": response.status_code}, 502
+            logger.error(f"Erreur API OpenWeatherMap : {response.status_code} - {response.text}")
+            return {"error": f"Erreur API : {response.status_code} - {response.text}"}
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"Erreur de connexion à l'API météo : {e}")
+        return {"error": "Impossible de se connecter à l'API météo (problème réseau ou DNS)"}
     except Exception as e:
         logger.error(f"Erreur inattendue lors de la récupération des données météo : {e}")
-        return {"error": "Une erreur s'est produite lors de la récupération des données météo"}, 500
+        return {"error": "Erreur serveur lors de la récupération des données météo"}
 
 def get_hourly_forecast(city=None, lat=None, lon=None):
     """
@@ -66,7 +74,7 @@ def get_hourly_forecast(city=None, lat=None, lon=None):
     api_key = Config.WEATHER_API_KEY
     if not api_key:
         logger.error("Clé d'API météo non configurée dans Config.")
-        return {"error": "Clé d'API météo non configurée"}, 500
+        return {"error": "Clé d'API météo non configurée"}
 
     if lat and lon:
         url = f"http://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&appid={api_key}&units=metric"
@@ -74,10 +82,10 @@ def get_hourly_forecast(city=None, lat=None, lon=None):
         url = f"http://api.openweathermap.org/data/2.5/forecast?q={city}&appid={api_key}&units=metric"
     else:
         logger.warning("Aucune ville ou coordonnées fournies pour la requête de prévisions météo.")
-        return {"error": "Ville ou coordonnées requises"}, 400
+        return {"error": "Ville ou coordonnées requises"}
 
     try:
-        response = requests.get(url)
+        response = requests.get(url)  # Sans timeout
         if response.status_code == 200:
             data = response.json()
             hourly_forecast = []
@@ -90,8 +98,11 @@ def get_hourly_forecast(city=None, lat=None, lon=None):
             logger.debug(f"Prévisions horaires récupérées avec succès : {hourly_forecast}")
             return hourly_forecast
         else:
-            logger.error(f"Erreur lors de la récupération des prévisions météo : {response.status_code} - {response.text}")
-            return {"error": "Impossible de récupérer les prévisions", "status_code": response.status_code}, 502
+            logger.error(f"Erreur API OpenWeatherMap : {response.status_code} - {response.text}")
+            return {"error": f"Erreur API : {response.status_code} - {response.text}"}
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"Erreur de connexion à l'API météo : {e}")
+        return {"error": "Impossible de se connecter à l'API météo (problème réseau ou DNS)"}
     except Exception as e:
         logger.error(f"Erreur inattendue lors de la récupération des prévisions météo : {e}")
-        return {"error": "Une erreur s'est produite lors de la récupération des prévisions météo"}, 500
+        return {"error": "Erreur serveur lors de la récupération des prévisions météo"}

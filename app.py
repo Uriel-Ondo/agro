@@ -5,26 +5,21 @@ from flask import Flask, send_from_directory, request
 from flask_restx import Api
 from flask_migrate import Migrate
 from flask_cors import CORS
-from flask_socketio import SocketIO
-from flask_jwt_extended import JWTManager
-from flask_mail import Mail
+from flask_jwt_extended import decode_token
 from config import Config
+from flask_socketio import SocketIO, join_room, leave_room, emit
 import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timedelta
-from flask_socketio import join_room, leave_room
 import os
 import atexit
-from extensions import db
+from extensions import db, jwt, mail, socketio
 
 # Configurer le logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Initialisation globale des extensions
 migrate = Migrate()
-jwt = JWTManager()
-socketio = SocketIO(async_mode='eventlet', cors_allowed_origins="*")
 
 def create_app():
     app = Flask(__name__)
@@ -35,22 +30,30 @@ def create_app():
         logger.error("JWT_SECRET_KEY non défini dans la configuration !")
         raise ValueError("JWT_SECRET_KEY doit être défini dans Config")
 
-    socketio.init_app(app)
-    logger.debug("SocketIO initialisé avec l'application")
+    # Liste des origines autorisées (configurable via env pour déploiement)
+    ALLOWED_ORIGINS = [
+        "http://192.168.1.90:8100",
+        "http://192.168.1.90:5000",
+        "http://localhost:8100",  # Pour tests locaux frontend
+        "http://localhost:5000",  # Pour tests locaux backend
+    ]
+    # Permettre une configuration dynamique via variable d'environnement
+    if os.getenv("ALLOWED_CORS_ORIGINS"):
+        ALLOWED_ORIGINS.extend(os.getenv("ALLOWED_CORS_ORIGINS").split(","))
 
-    try:
-        db.init_app(app)
-        logger.debug("SQLAlchemy initialisé")
-        migrate.init_app(app, db)
-        logger.debug("Migrate initialisé")
-        jwt.init_app(app)
-        logger.debug("JWTManager initialisé")
-        mail = Mail(app) if app.config.get('MAIL_SERVER') else None
-        logger.debug("Mail initialisé" if mail else "Mail non configuré")
-    except Exception as e:
-        logger.error(f"Erreur lors de l'initialisation des extensions : {e}")
-        return None
+    # Initialisation des extensions
+    socketio.init_app(app, cors_allowed_origins=ALLOWED_ORIGINS, logger=True, engineio_logger=True)
+    logger.debug(f"SocketIO initialisé avec origines autorisées : {ALLOWED_ORIGINS}")
+    db.init_app(app)
+    logger.debug("SQLAlchemy initialisé")
+    migrate.init_app(app, db)
+    logger.debug("Migrate initialisé")
+    jwt.init_app(app)
+    logger.debug("JWTManager initialisé")
+    mail.init_app(app) if app.config.get('MAIL_SERVER') else None
+    logger.debug("Mail initialisé" if app.config.get('MAIL_SERVER') else "Mail non configuré")
 
+    # Gestion des erreurs JWT
     @jwt.invalid_token_loader
     def invalid_token_callback(error):
         logger.error(f"Token invalide : {error}")
@@ -66,23 +69,49 @@ def create_app():
         logger.error("Token expiré")
         return {"msg": "Token has expired"}, 401
 
-    scheduler = BackgroundScheduler()
-
-    from models.user import User
-    from models.plant_disease import PlantDisease
-    from models.chat_message import ChatMessage
-    from models.live_comment import LiveComment
-    from models.expert_session import ExpertSession, SessionMessage
-    from models.public_request import PublicRequest
-
+    # Configuration CORS pour les requêtes HTTP
     CORS(app, resources={r"/*": {
-        "origins": ["http://localhost:8100"],
+        "origins": ALLOWED_ORIGINS,
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization", "Accept"],
         "supports_credentials": True,
         "max_age": 86400
     }})
-    logger.debug("CORS configuré pour les requêtes HTTP")
+    logger.debug(f"CORS configuré pour les requêtes HTTP avec origines : {ALLOWED_ORIGINS}")
+
+    # Gestion des requêtes OPTIONS pour CORS
+    @app.before_request
+    def handle_preflight():
+        if request.method == "OPTIONS":
+            response = app.make_default_options_response()
+            response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', ALLOWED_ORIGINS[0])
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept'
+            response.headers['Access-Control-Max-Age'] = '86400'
+            return response
+
+    # Log des headers de réponse pour débogage
+    @app.after_request
+    def log_response(response):
+        origin = request.headers.get('Origin')
+        if origin in ALLOWED_ORIGINS:
+            response.headers['Access-Control-Allow-Origin'] = origin
+        else:
+            response.headers['Access-Control-Allow-Origin'] = ALLOWED_ORIGINS[0]
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        logger.debug(f"Response Headers: {response.headers}")
+        return response
+
+    scheduler = BackgroundScheduler()
+
+    # Importation des modèles
+    from models.user import User
+    from models.plant_disease import PlantDisease
+    from models.chat_message import ChatMessage
+    from models.live_comment import LiveComment
+    from models.live_session import LiveSession
+    from models.expert_session import ExpertSession, SessionMessage
+    from models.public_request import PublicRequest
 
     api = Api(
         title="Agri Assist API",
@@ -105,9 +134,9 @@ def create_app():
             logger.debug("Tables créées avec succès dans la base de données.")
 
             def create_admin_user():
-                admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
-                admin_username = os.getenv("ADMIN_USERNAME", "admin")
-                admin_password = os.getenv("ADMIN_PASSWORD", "admin123")
+                admin_email = os.getenv("ADMIN_EMAIL")
+                admin_username = os.getenv("ADMIN_USERNAME")
+                admin_password = os.getenv("ADMIN_PASSWORD")
                 if not User.query.filter_by(email=admin_email).first():
                     admin_user = User(
                         username=admin_username,
@@ -125,7 +154,7 @@ def create_app():
 
             import requests
             try:
-                response = requests.get("http://localhost:11434/", timeout=2)
+                response = requests.get("http://127.0.0.1:11434/")
                 if response.status_code == 200:
                     logger.debug("Ollama est en marche et accessible localement.")
                 else:
@@ -136,6 +165,7 @@ def create_app():
             logger.error(f"Erreur dans le contexte d'application : {e}")
             return None
 
+    # Routes statiques
     @app.route('/live_comments')
     def live_comments():
         return send_from_directory('static', 'live_comments.html')
@@ -144,21 +174,144 @@ def create_app():
     def expert_chat():
         return send_from_directory('static', 'expert_chat.html')
 
+    @app.route('/uploads/<path:filename>')
+    def serve_uploaded_file(filename):
+        return send_from_directory('uploads', filename)
+
+    # Gestion des WebSockets pour les lives
     @socketio.on('connect', namespace='/live')
     def handle_live_connect(auth=None):
-        logger.debug("Client connecté au namespace /live")
+        logger.debug(f"Client connecté au namespace /live depuis {request.headers.get('Origin')}")
+        join_room("live_room")
+        if auth and auth.get('token'):
+            try:
+                decoded_token = decode_token(auth['token'])
+                logger.debug(f"Utilisateur authentifié connecté : {decoded_token['sub']}")
+            except Exception as e:
+                logger.warning(f"Token invalide fourni mais ignoré : {e}")
+        else:
+            logger.debug("Connexion anonyme au namespace /live")
 
     @socketio.on('disconnect', namespace='/live')
     def handle_live_disconnect():
         logger.debug("Client déconnecté du namespace /live")
+        leave_room("live_room")
+
+    @socketio.on('new_comment', namespace='/live')
+    def handle_new_comment(data):
+        from flask_jwt_extended import get_jwt_identity
+        user_id = get_jwt_identity()
+        if not user_id or not data.get('comment'):
+            logger.warning("Commentaire reçu sans authentification ou données invalides")
+            emit('error', {'message': 'Authentification requise pour commenter'}, room=request.sid)
+            return
+        user = db.session.get(User, user_id)
+        comment = LiveComment(
+            user_id=user_id,
+            username=user.username,
+            comment=data['comment'],
+            created_at=datetime.utcnow()
+        )
+        db.session.add(comment)
+        db.session.commit()
+        comment_data = {
+            'id': comment.id,
+            'username': comment.username,
+            'comment': comment.comment,
+            'created_at': comment.created_at.isoformat()
+        }
+        emit('new_comment', comment_data, namespace='/live', room="live_room")
+        logger.debug(f"Commentaire ajouté par {user.username}: {comment.comment}")
+
+    @socketio.on('start_live', namespace='/expert')
+    def handle_start_live(data):
+        user_id = request.args.get('user_id')
+        if not user_id or not user_id.isdigit():
+            logger.error(f"Start live refusé - user_id invalide: {user_id}")
+            socketio.emit('error', {'message': 'User ID invalide'}, namespace='/expert', room=request.sid)
+            return
+
+        user = db.session.get(User, int(user_id))
+        if not user or user.role != 'expert':
+            logger.error(f"Start live refusé - expert non trouvé ou non autorisé: {user_id}")
+            socketio.emit('error', {'message': 'Accès refusé'}, namespace='/expert', room=request.sid)
+            return
+
+        stream_url = data.get('stream_url')
+        if not stream_url:
+            logger.error(f"Stream URL manquant pour {user.username}")
+            socketio.emit('error', {'message': 'Stream URL requis'}, namespace='/expert', room=request.sid)
+            return
+
+        stream_type = 'hls'  # Choix automatique
+        live_session = LiveSession(
+            expert_id=user_id,
+            stream_url=stream_url,
+            stream_type=stream_type,
+            title=data.get('title', f'Live - {user.username}'),
+            status='active',
+            started_at=datetime.utcnow()
+        )
+        db.session.add(live_session)
+        db.session.commit()
+
+        live_data = {
+            'session_id': live_session.id,
+            'expert_id': user_id,
+            'expert_username': user.username,
+            'stream_url': live_session.stream_url,
+            'stream_type': stream_type,
+            'title': live_session.title,
+            'started_at': live_session.started_at.isoformat()
+        }
+        socketio.emit('live_started', live_data, namespace='/live', room="live_room")
+        logger.info(f"Live démarré par {user.username} - ID: {live_session.id} ({stream_type})")
+
+    @socketio.on('end_live', namespace='/expert')
+    def handle_end_live(data):
+        user_id = request.args.get('user_id')
+        session_id = data.get('session_id')
+        live_session = LiveSession.query.get(session_id)
+
+        if not live_session or live_session.expert_id != int(user_id):
+            logger.error(f"End live refusé - session invalide ou non autorisée: {session_id}")
+            socketio.emit('error', {'message': 'Session invalide ou non autorisée'}, namespace='/expert', room=request.sid)
+            return
+
+        live_session.status = 'ended'
+        live_session.ended_at = datetime.utcnow()
+        db.session.commit()
+
+        socketio.emit('live_ended', {
+            'session_id': session_id,
+            'expert_username': User.query.get(live_session.expert_id).username
+        }, namespace='/live', room="live_room")
+        logger.info(f"Live terminé - ID: {session_id}")
 
     @socketio.on('connect', namespace='/expert')
     def handle_expert_connect(auth=None):
         user_id = request.args.get('user_id')
-        logger.debug(f"Connexion WebSocket /expert - user_id: {user_id}")
+        token = auth.get('token') if auth else None
+        logger.debug(f"Connexion WebSocket /expert - user_id: {user_id}, token: {token}")
+
+        if not token:
+            logger.warning("Connexion refusée - token manquant")
+            return False
+
+        try:
+            decoded_token = decode_token(token)
+            token_user_id = decoded_token['sub']
+            if not user_id or user_id != str(token_user_id):
+                logger.warning(f"Connexion refusée - user_id ({user_id}) ne correspond pas au token ({token_user_id})")
+                return False
+        except Exception as e:
+            logger.warning(f"Connexion refusée - token invalide: {e}")
+            return False
+
         if not user_id or user_id == "undefined" or not user_id.isdigit():
             logger.warning(f"Connexion refusée - user_id invalide: {user_id}")
             return False
+
         user = db.session.get(User, int(user_id))
         if user:
             user.set_online(True)
@@ -172,17 +325,29 @@ def create_app():
     def handle_join_session(data):
         user_id = request.args.get('user_id')
         session_id = data.get('session_id')
+        logger.debug(f"Reçu join_session - user_id: {user_id}, session_id: {session_id}")
+
         if not user_id or not user_id.isdigit() or not session_id:
             logger.warning(f"Join session refusé - user_id: {user_id}, session_id: {session_id}")
-            return
+            return {'error': 'Paramètres invalides'}, 400
+
         user = db.session.get(User, int(user_id))
-        if user:
-            session = ExpertSession.query.get(session_id)
-            if session and user_id in [str(session.user_id), str(session.expert_id)]:
-                join_room(f"session_{session_id}")
-                logger.debug(f"Utilisateur {user_id} a rejoint la room session_{session_id}")
-            else:
-                logger.warning(f"Session {session_id} invalide ou accès refusé pour user_id: {user_id}")
+        if not user:
+            logger.warning(f"Utilisateur non trouvé - user_id: {user_id}")
+            return {'error': 'Utilisateur non trouvé'}, 404
+
+        session = ExpertSession.query.get(session_id)
+        if not session:
+            logger.warning(f"Session introuvable - session_id: {session_id}")
+            return {'error': 'Session introuvable'}, 404
+
+        if user_id not in [str(session.user_id), str(session.expert_id)]:
+            logger.warning(f"Accès refusé à la session {session_id} pour user_id: {user_id}")
+            return {'error': 'Accès refusé'}, 403
+
+        join_room(f"session_{session_id}")
+        logger.debug(f"Utilisateur {user_id} a rejoint la room session_{session_id}")
+        return {'status': 'success', 'session_id': session_id}
 
     @socketio.on('disconnect', namespace='/expert')
     def handle_expert_disconnect():
@@ -209,6 +374,7 @@ def create_app():
         except Exception as e:
             logger.error(f"Erreur lors du traitement de mark_message_read: {e}")
 
+    # Scheduler pour nettoyer les commentaires anciens
     def clean_old_comments():
         with app.app_context():
             two_hours_ago = datetime.utcnow() - timedelta(hours=2)
@@ -232,7 +398,7 @@ def create_app():
             logger.debug("Scheduler arrêté avec succès.")
     atexit.register(shutdown_scheduler)
 
-    # Ajouter les namespaces après toute l'initialisation
+    # Enregistrement des namespaces API
     def register_namespaces():
         from api.auth import ns as auth_ns
         from api.plant import ns as plant_ns

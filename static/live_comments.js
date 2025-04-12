@@ -1,6 +1,13 @@
+// Configuration de l'URL du backend
+const BACKEND_URL = window.location.hostname === 'localhost' ?
+    'http://localhost:5000' :
+    'http://192.168.1.90:5000'; // Ajuster pour déploiement
+const WS_URL = BACKEND_URL + '/live';
+
 let token = null;
 let tokenExpiration = null;
 let hls = null; // Instance HLS globale
+let socket = null; // Socket global
 
 // Éléments de l’écran de connexion
 const loginScreen = document.getElementById('login-screen');
@@ -40,7 +47,7 @@ const chatbotControls = [chatbotInput, chatbotSend, chatbotClose];
 let chatbotFocusIndex = 0;
 
 // Regrouper les éléments par section pour une navigation bidimensionnelle
-const videoControls = [channelSelector, replayBtn, playPauseBtn, rewindBtn, forwardBtn, muteBtn, volumeBar, fullscreenBtn];
+const videoControls = [channelSelector, replayBtn, playPauseBtn, rewindBtn, forwardBtn, muteBtn, volumeBar, fullscreenBtn, chatbotBtn];
 const commentControls = [newCommentInput, sendCommentBtn];
 const weatherControls = [weatherCityInput, weatherSubmitBtn, weatherGeoBtn];
 const controlSections = [videoControls, commentControls, weatherControls];
@@ -215,7 +222,7 @@ document.addEventListener('keydown', (e) => {
 
 // Fonction pour charger le flux vidéo
 function loadVideoStream(channel) {
-    fetch(`http://localhost:5000/live/stream/${channel}`)
+    fetch(`${BACKEND_URL}/live/stream/${channel}`)
         .then(response => {
             if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
             return response.json();
@@ -259,7 +266,7 @@ function loadVideoStream(channel) {
 playPauseBtn.addEventListener('click', () => {
     if (video.paused) {
         video.play();
-        playPauseBtn.innerHTML = '<i class="fas fa-pause"></i>';
+        playPauseBtn.innerHTML = '<i class="fas fa-pvu"></i>';
     } else {
         video.pause();
         playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
@@ -324,7 +331,7 @@ channelSelector.addEventListener('change', () => {
 loginBtn.addEventListener('click', () => {
     const email = emailInput.value;
     const password = passwordInput.value;
-    fetch('http://localhost:5000/auth/login', {
+    fetch(`${BACKEND_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
@@ -337,6 +344,7 @@ loginBtn.addEventListener('click', () => {
             tokenExpiration = new Date(Date.now() + 10 * 60 * 1000);
             console.log('Token expire à:', tokenExpiration);
             loginScreen.style.display = 'none';
+            initializeWebSocket(); // Réinitialiser WebSocket avec le nouveau token
             currentSectionIndex = 0;
             currentElementIndex = 0;
             updateFocus();
@@ -370,38 +378,48 @@ sendCommentBtn.addEventListener('click', () => {
             loginScreen.style.display = 'flex';
             loginControls[0].focus();
         } else {
-            sendComment();
+            sendComment(commentText);
         }
     }
 });
 
-function sendComment() {
-    const commentText = newCommentInput.value.trim();
+function sendComment(commentText) {
     if (commentText && token) {
         if (!socket || !socket.connected) {
-            console.error('WebSocket non connecté. Tentative de reconnexion...');
+            console.warn('WebSocket non connecté. Tentative de reconnexion...');
             initializeWebSocket();
-            const waitForConnection = setInterval(() => {
-                if (socket && socket.connected) {
-                    clearInterval(waitForConnection);
-                    sendCommentRequest(commentText);
-                }
-            }, 500);
             setTimeout(() => {
-                clearInterval(waitForConnection);
-                if (!socket || !socket.connected) {
-                    console.error('Échec de la reconnexion WebSocket. Envoi du commentaire sans mise à jour en temps réel.');
-                    sendCommentRequest(commentText);
+                if (socket && socket.connected) {
+                    socket.emit('new_comment', { comment: commentText }, (response) => {
+                        handleCommentResponse(response);
+                    });
+                } else {
+                    console.warn('WebSocket toujours déconnecté. Envoi via HTTP.');
+                    sendCommentViaHttp(commentText);
                 }
-            }, 5000);
+            }, 1000);
         } else {
-            sendCommentRequest(commentText);
+            socket.emit('new_comment', { comment: commentText }, (response) => {
+                handleCommentResponse(response);
+            });
         }
     }
 }
 
-function sendCommentRequest(commentText) {
-    fetch('http://localhost:5000/live/comment', {
+function handleCommentResponse(response) {
+    if (response && response.error) {
+        console.error('Erreur envoi commentaire:', response.error);
+        alert(response.error);
+    } else {
+        newCommentInput.value = '';
+        currentSectionIndex = 1;
+        currentElementIndex = 0;
+        updateFocus();
+    }
+}
+
+function sendCommentViaHttp(commentText) {
+    fetch(`${BACKEND_URL}/live/comment`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -414,42 +432,13 @@ function sendCommentRequest(commentText) {
         return response.json();
     })
     .then(data => {
-        console.log('Réponse envoi commentaire:', data);
-        if (data.message === "Commentaire ajouté") {
-            newCommentInput.value = '';
-            tokenExpiration = new Date(Date.now() + 10 * 60 * 1000);
-            console.log('Token expiration mise à jour à:', tokenExpiration);
-            if (!socket || !socket.connected) {
-                fetch('http://localhost:5000/auth/me', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                })
-                .then(response => response.json())
-                .then(userData => {
-                    const commentData = {
-                        username: userData.username || 'Vous',
-                        comment: commentText,
-                        created_at: new Date().toISOString(),
-                        isLocal: true
-                    };
-                    addComment(commentData);
-                })
-                .catch(error => {
-                    console.error('Erreur lors de la récupération du nom d’utilisateur:', error);
-                    const commentData = {
-                        username: 'Vous',
-                        comment: commentText,
-                        created_at: new Date().toISOString(),
-                        isLocal: true
-                    };
-                    addComment(commentData);
-                });
-            }
-            currentSectionIndex = 1;
-            currentElementIndex = 0;
-            updateFocus();
-        }
+        console.log('Commentaire envoyé via HTTP:', data);
+        newCommentInput.value = '';
+        currentSectionIndex = 1;
+        currentElementIndex = 0;
+        updateFocus();
     })
-    .catch(error => console.error('Erreur lors de l’envoi du commentaire:', error));
+    .catch(error => console.error('Erreur envoi commentaire via HTTP:', error));
 }
 
 // Gestion de la météo
@@ -479,16 +468,19 @@ function fetchWeatherByGeolocation() {
             },
             (error) => {
                 console.error('Erreur de géolocalisation:', error);
-                weatherInfo.textContent = 'Impossible d’obtenir votre position.';
+                weatherInfo.textContent = 'Géolocalisation refusée ou indisponible. Affichage de la météo pour Paris.';
+                fetchWeatherByCity('Paris'); // Ville par défaut
             }
         );
     } else {
-        weatherInfo.textContent = 'Géolocalisation non supportée par votre appareil.';
+        console.log('Géolocalisation non supportée par cet appareil.');
+        weatherInfo.textContent = 'Géolocalisation non supportée. Affichage de la météo pour Paris.';
+        fetchWeatherByCity('Paris'); // Ville par défaut
     }
 }
 
 function fetchWeatherByCity(city) {
-    const url = `http://localhost:5000/weather/local?city=${encodeURIComponent(city)}`;
+    const url = `${BACKEND_URL}/weather/local?city=${encodeURIComponent(city)}`;
     console.log('URL fetch ville:', url);
     fetch(url)
     .then(response => {
@@ -506,7 +498,7 @@ function fetchWeatherByCity(city) {
 }
 
 function fetchWeatherByCoords(lat, lon) {
-    const url = `http://localhost:5000/weather/local?lat=${lat}&lon=${lon}`;
+    const url = `${BACKEND_URL}/weather/local?lat=${lat}&lon=${lon}`;
     console.log('URL fetch coordonnées:', url);
     fetch(url)
     .then(response => {
@@ -533,6 +525,7 @@ function displayWeather(data) {
         weatherInfo.textContent = data.error;
     } else {
         weatherInfo.innerHTML = `
+            <span>Ville: ${data.city}, ${data.country}</span>
             <span>Température: ${data.temperature}°C</span>
             <span>Description: ${data.description}</span>
             <span>Humidité: ${data.humidity}%</span>
@@ -595,13 +588,13 @@ function sendChatbotMessage(message) {
         return;
     }
     addChatbotMessage(message, true);
-    fetch('http://localhost:5000/chat/send', {
+    fetch(`${BACKEND_URL}/chat/send`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ message }) // Suppression de conversation_id
+        body: JSON.stringify({ message })
     })
     .then(response => {
         if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
@@ -621,7 +614,7 @@ function sendChatbotMessage(message) {
 
 function fetchChatbotHistory() {
     if (!isTokenValid()) return;
-    fetch('http://localhost:5000/chat/history', {
+    fetch(`${BACKEND_URL}/chat/history`, {
         headers: { 'Authorization': `Bearer ${token}` }
     })
     .then(response => {
@@ -641,19 +634,19 @@ function fetchChatbotHistory() {
 }
 
 // WebSocket pour les commentaires en temps réel
-let socket;
-
 function initializeWebSocket() {
+    if (socket) {
+        socket.disconnect();
+        socket = null;
+    }
+
     if (typeof io === 'undefined') {
-        console.error('Socket.IO non chargé. Vérifiez la balise <script> dans live_comments.html');
+        console.error('Socket.IO non chargé. Chargement dynamique...');
         const script = document.createElement('script');
         script.src = 'https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js';
-        script.onload = () => {
-            console.log('Socket.IO chargé avec succès via fallback');
-            setupWebSocket();
-        };
+        script.onload = setupWebSocket;
         script.onerror = () => {
-            console.error('Échec du chargement de Socket.IO via fallback. Les commentaires ne seront pas en temps réel.');
+            console.error('Échec du chargement de Socket.IO. Les commentaires ne seront pas en temps réel.');
         };
         document.head.appendChild(script);
     } else {
@@ -662,16 +655,16 @@ function initializeWebSocket() {
 }
 
 function setupWebSocket() {
-    socket = io('http://localhost:5000/live', {
+    socket = io(WS_URL, {
         transports: ['websocket'],
         reconnection: true,
         reconnectionAttempts: 5,
-        reconnectionDelay: 1000
+        reconnectionDelay: 1000,
+        auth: token ? { token: token } : {}
     });
 
     socket.on('connect', () => {
-        console.log('Connecté au serveur WebSocket');
-        console.log('Socket ID:', socket.id);
+        console.log('Connecté au serveur WebSocket, ID:', socket.id);
     });
 
     socket.on('new_comment', (data) => {
@@ -685,6 +678,10 @@ function setupWebSocket() {
 
     socket.on('connect_error', (error) => {
         console.error('Erreur de connexion WebSocket:', error.message);
+        setTimeout(() => {
+            console.log('Tentative de reconnexion WebSocket...');
+            socket.connect();
+        }, 5000);
     });
 
     socket.on('reconnect', (attempt) => {
@@ -693,15 +690,19 @@ function setupWebSocket() {
 
     socket.on('reconnect_failed', () => {
         console.error('Échec de la reconnexion au serveur WebSocket');
+        alert('Connexion aux commentaires en temps réel perdue. Utilisation du mode HTTP.');
     });
 
-    socket.on('message', (msg) => {
-        console.log('Message WebSocket reçu:', msg);
+    socket.on('error', (data) => {
+        console.error('Erreur WebSocket:', data.message);
+        alert(data.message);
     });
 }
 
 function fetchInitialComments() {
-    fetch('http://localhost:5000/live/comments')
+    fetch(`${BACKEND_URL}/live/comments`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+    })
     .then(response => {
         if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
         return response.json();
@@ -722,23 +723,18 @@ function addComment(data) {
         console.error('Élément #comments non trouvé dans le DOM');
         return;
     }
-    const existingComments = Array.from(commentsContainer.children);
-    const commentExists = existingComments.some(comment => {
-        const text = comment.querySelector('.text').textContent;
-        const time = comment.querySelector('.time').textContent;
-        return text === data.comment && time === new Date(data.created_at).toLocaleString();
-    });
-    if (commentExists) return;
+    const existingComment = commentsContainer.querySelector(`.comment[data-id="${data.id}"]`);
+    if (existingComment) return;
 
     const commentDiv = document.createElement('div');
     commentDiv.className = 'comment';
+    commentDiv.dataset.id = data.id;
     commentDiv.innerHTML = `
         <span class="user">${data.username || 'Anonyme'}</span>
         <span class="time">${new Date(data.created_at).toLocaleString()}</span>
         <span class="text">${data.comment}</span>
     `;
     commentsContainer.appendChild(commentDiv);
-
     commentsContainer.scrollTop = commentsContainer.scrollHeight;
 
     const comments = commentsContainer.children;
@@ -762,7 +758,7 @@ initializeWebSocket();
 // Initialisation au chargement
 window.addEventListener('load', () => {
     console.log('Chargement de la page');
-    fetchWeatherByGeolocation();
+    fetchWeatherByGeolocation(); // Tentative de géolocalisation au démarrage
     fetchInitialComments();
     loadVideoStream(channelSelector.value); // Charger le flux par défaut
     const commentsContainer = document.getElementById('comments');

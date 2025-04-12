@@ -1,4 +1,4 @@
-from app import socketio, db
+from extensions import socketio, db  # Importer depuis extensions.py, pas app.py
 from models.public_request import PublicRequest
 from models.expert_session import ExpertSession, SessionMessage
 from models.user import User
@@ -9,6 +9,7 @@ from datetime import datetime
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+# Le reste du code reste inchangé
 def create_public_request(user_id, request_type, content):
     """Crée une demande publique (utilisée dans expert.py)."""
     try:
@@ -33,6 +34,7 @@ def notify_all_experts(request):
                     {
                         "request_id": request.id,
                         "user_id": request.user_id,
+                        "username": User.query.get(request.user_id).username,
                         "request_type": request.request_type,
                         "content": request.content,
                         "created_at": request.created_at.isoformat()
@@ -66,6 +68,9 @@ def respond_to_request(request_id, expert_id, response_content, response_type="t
             {
                 "session_id": session.id,
                 "expert_id": expert_id,
+                "farmer_username": User.query.get(session.user_id).username,
+                "expert_username": User.query.get(expert_id).username,
+                "request_id": request_id,
                 "message": response_content,
                 "session_type": response_type
             },
@@ -89,7 +94,6 @@ def send_private_message(session_id, sender_id, message_type, content):
         recipient_id = session.user_id if sender_id == session.expert_id else session.expert_id
         recipient = User.query.get(recipient_id)
         
-        # Mettre à jour le statut en fonction de l'état en ligne du destinataire
         new_status = "received" if recipient.is_online else "sent"
         message.status = new_status
         db.session.commit()
@@ -101,10 +105,10 @@ def send_private_message(session_id, sender_id, message_type, content):
             'message_type': message_type,
             'content': content,
             'created_at': message.created_at.isoformat(),
-            'status': new_status
+            'status': new_status,
+            'request_id': session.public_request_id
         }
 
-        # Émettre à la room de la session
         socketio.emit(
             'new_private_message',
             message_data,
@@ -112,7 +116,6 @@ def send_private_message(session_id, sender_id, message_type, content):
             room=f"session_{session_id}"
         )
         
-        # Notifier l'expéditeur du statut initial
         socketio.emit(
             'message_status_update',
             {'message_id': message.id, 'status': new_status},
@@ -128,10 +131,12 @@ def send_private_message(session_id, sender_id, message_type, content):
 def send_session_ended(session_id, expert_id, farmer_id):
     """Notifie les deux utilisateurs que la session est terminée via WebSocket."""
     try:
+        session = ExpertSession.query.get(session_id)
         socketio.emit(
             "session_ended",
             {
                 "session_id": session_id,
+                "request_id": session.public_request_id,
                 "message": "La session a été terminée par l'expert."
             },
             namespace="/expert",
@@ -141,6 +146,7 @@ def send_session_ended(session_id, expert_id, farmer_id):
             "session_ended",
             {
                 "session_id": session_id,
+                "request_id": session.public_request_id,
                 "message": "Vous avez terminé la session."
             },
             namespace="/expert",
@@ -155,10 +161,12 @@ def notify_session_deleted(session_id, farmer_id, expert_id, deleted_by_id):
     """Notifie les deux utilisateurs que la session a été supprimée via WebSocket."""
     try:
         deleted_by = User.query.get(deleted_by_id).username
+        session = ExpertSession.query.get(session_id)
         socketio.emit(
             "session_deleted",
             {
                 "session_id": session_id,
+                "request_id": session.public_request_id if session else None,
                 "message": f"La session a été supprimée par {deleted_by}."
             },
             namespace="/expert",
@@ -168,6 +176,7 @@ def notify_session_deleted(session_id, farmer_id, expert_id, deleted_by_id):
             "session_deleted",
             {
                 "session_id": session_id,
+                "request_id": session.public_request_id if session else None,
                 "message": f"Vous avez supprimé la session." if deleted_by_id == expert_id else f"La session a été supprimée par {deleted_by}."
             },
             namespace="/expert",
@@ -189,7 +198,7 @@ def mark_message_as_read(session_id, message_id, reader_id):
                 'message_status_update',
                 {'message_id': message_id, 'status': 'read'},
                 namespace="/expert",
-                room=f"session_{session_id}"  # Émettre à la room de la session
+                room=f"session_{session_id}"
             )
             logger.debug(f"Message {message_id} marqué comme lu dans la session {session_id}")
     except Exception as e:

@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # URL de l'API Ollama
-OLLAMA_API_URL = "http://localhost:11434/api/chat"
+OLLAMA_API_URL = "http://127.0.0.1:11434/api/chat"
 
 def process_chat_message(user_id, message, conversation_id=None, image=None):
     """
@@ -28,6 +28,15 @@ def process_chat_message(user_id, message, conversation_id=None, image=None):
         if not user:
             logger.error(f"Utilisateur avec ID {user_id} non trouvé.")
             raise ValueError("Utilisateur non trouvé.")
+
+        # Vérifier la disponibilité d'Ollama
+        try:
+            response = requests.get("http://127.0.0.1:11434/", timeout=2)
+            response.raise_for_status()
+            logger.debug("Ollama est accessible.")
+        except requests.RequestException as e:
+            logger.error(f"Ollama n'est pas accessible : {e.__class__.__name__} - {str(e)}")
+            raise ValueError("Le service Ollama n'est pas accessible.")
 
         # Initialiser la réponse finale
         response_parts = []
@@ -94,9 +103,28 @@ def process_chat_message(user_id, message, conversation_id=None, image=None):
                 "temperature": 0.7
             }
 
-            # Envoyer la requête à Ollama
-            response = requests.post(OLLAMA_API_URL, json=payload)
-            response.raise_for_status()
+            # Envoyer la requête à Ollama avec un timeout
+            try:
+                logger.debug(f"Payload envoyé à Ollama : {payload}")
+                response = requests.post(OLLAMA_API_URL, json=payload)
+                response.raise_for_status()
+            except requests.RequestException as e:
+                logger.error(f"Erreur lors de la communication avec l'API Ollama : {e.__class__.__name__} - {str(e)}")
+                error_response = (
+                    "### AgriBot\n"
+                    "\n### Erreur\n"
+                    f"- Une erreur s'est produite avec l'API Ollama : {e.__class__.__name__} - {str(e)}.\n"
+                    "- Veuillez réessayer plus tard."
+                )
+                chat = ChatMessage(
+                    user_id=user_id,
+                    message=message,
+                    response=error_response,
+                    conversation_id=conversation_id
+                )
+                db.session.add(chat)
+                db.session.commit()
+                return error_response
 
             # Extraire et structurer la réponse
             response_data = response.json()
@@ -143,24 +171,6 @@ def process_chat_message(user_id, message, conversation_id=None, image=None):
         db.session.rollback()
         logger.error(f"Erreur de type de données lors de l'enregistrement du message : {e}")
         raise ValueError("Erreur : les types de données fournis sont incorrects.")
-    except requests.exceptions.RequestException as e:
-        db.session.rollback()
-        logger.error(f"Erreur lors de la communication avec l'API Ollama : {e}")
-        error_response = (
-            "### AgriBot\n"
-            "\n### Erreur\n"
-            "- Désolé, une erreur s'est produite avec le service de chat.\n"
-            "- Veuillez réessayer plus tard."
-        )
-        chat = ChatMessage(
-            user_id=user_id,
-            message=message,
-            response=error_response,
-            conversation_id=conversation_id
-        )
-        db.session.add(chat)
-        db.session.commit()
-        return error_response
     except Exception as e:
         db.session.rollback()
         logger.error(f"Erreur inattendue dans process_chat_message : {e}")

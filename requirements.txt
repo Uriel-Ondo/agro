@@ -25,3 +25,4 @@ keras
 matplotlib
 scikit-learn
 cloud-tpu-client
+ffmpeg-python

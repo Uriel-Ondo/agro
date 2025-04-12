@@ -184,7 +184,7 @@ class ResetPasswordRequest(Resource):
         reset_token = create_access_token(identity=str(user.id), expires_delta=False)
 
         # Envoyer un e-mail avec le lien de réinitialisation
-        reset_link = f"http://127.0.0.1:5000/auth/reset-password/confirm?token={reset_token}"
+        reset_link = f"http://192.168.1.90:5000/auth/reset-password/confirm?token={reset_token}"
         send_reset_email(email, reset_link)  # Fonction pour envoyer l'e-mail
 
         return {"message": "Un e-mail de réinitialisation a été envoyé"}, 200
