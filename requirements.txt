@@ -20,4 +20,14 @@ opencv-python
 numpy
 flask-os
 flask-migrate
+<<<<<<< Updated upstream
+=======
+flask-cors
+keras
+matplotlib
+scikit-learn
+cloud-tpu-client
+ffmpeg-python
+cohere
+>>>>>>> Stashed changes
 
