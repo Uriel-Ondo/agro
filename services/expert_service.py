@@ -1,4 +1,4 @@
-from extensions import socketio, db  # Importer depuis extensions.py, pas app.py
+from extensions import socketio, db  
 from models.public_request import PublicRequest
 from models.expert_session import ExpertSession, SessionMessage
 from models.user import User
