@@ -1,22 +1,29 @@
 from models.chat_message import ChatMessage
 from models.user import User
 from extensions import db
-import requests
 import logging
 from services.knowledge_base import get_static_response
 from services.plant_service import detect_plant_disease
 from sqlalchemy.exc import IntegrityError, DataError
+import os
+import cohere
 
 # Configurer le logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# URL de l'API Ollama
-OLLAMA_API_URL = "http://127.0.0.1:11434/api/chat"
+# Charger la clé d'API Cohere depuis l'environnement
+COHERE_API_KEY = os.getenv("COHERE_API_KEY")
+if not COHERE_API_KEY:
+    logger.error("COHERE_API_KEY non défini dans l'environnement")
+    raise ValueError("COHERE_API_KEY doit être défini dans l'environnement")
+
+# Initialiser le client Cohere
+co = cohere.Client(COHERE_API_KEY)
 
 def process_chat_message(user_id, message, conversation_id=None, image=None):
     """
-    Traite un message de l'utilisateur et génère une réponse structurée en utilisant l'API d'Ollama avec Gemma-2b.
+    Traite un message de l'utilisateur et génère une réponse conversationnelle en utilisant l'API de Cohere.
     Si une image est fournie, analyse l'image pour détecter une maladie des plantes.
     """
     try:
@@ -29,20 +36,8 @@ def process_chat_message(user_id, message, conversation_id=None, image=None):
             logger.error(f"Utilisateur avec ID {user_id} non trouvé.")
             raise ValueError("Utilisateur non trouvé.")
 
-        # Vérifier la disponibilité d'Ollama
-        try:
-            response = requests.get("http://127.0.0.1:11434/", timeout=2)
-            response.raise_for_status()
-            logger.debug("Ollama est accessible.")
-        except requests.RequestException as e:
-            logger.error(f"Ollama n'est pas accessible : {e.__class__.__name__} - {str(e)}")
-            raise ValueError("Le service Ollama n'est pas accessible.")
-
         # Initialiser la réponse finale
         response_parts = []
-
-        # Ajouter une introduction standard
-        response_parts.append("### AgriBot\nJe suis votre assistant agricole expert. Voici ma réponse :")
 
         # Vérifier si une image est fournie
         if image:
@@ -54,10 +49,7 @@ def process_chat_message(user_id, message, conversation_id=None, image=None):
 
             # Structurer l'analyse de l'image
             image_response = (
-                "\n### Analyse de l'image\n"
-                f"- **Maladie détectée** : {disease}\n"
-                f"- **Confiance** : {confidence * 100:.2f}%\n"
-                f"- **Recommandation** : {recommendation}"
+                f"J'ai analysé l'image fournie. Voici les résultats : une maladie ({disease}) a été détectée avec une confiance de {confidence * 100:.2f}%. Voici ma recommandation : {recommendation}."
             )
             response_parts.append(image_response)
             logger.debug(f"Résultat de l'analyse de l'image : {image_response}")
@@ -66,55 +58,42 @@ def process_chat_message(user_id, message, conversation_id=None, image=None):
         static_response = get_static_response(message)
         if static_response:
             logger.debug(f"Réponse statique trouvée : {static_response}")
-            if response_parts and image:  # Si une image a été analysée
-                response_parts.append(
-                    "\n### Réponse à votre question\n"
-                    f"{static_response}"
-                )
-            else:
-                response_parts.append(f"\n### Réponse\n{static_response}")
+            response_parts.append(static_response)
         else:
-            # Préparer le message pour Ollama
+            # Préparer le message pour Cohere
             full_message = message
             if response_parts and image:  # Si une image a été analysée
-                full_message = f"{response_parts[1]}\n\nUtilisateur : {message}"
+                full_message = f"{response_parts[0]}\n\nQuestion de l'utilisateur : {message}"
 
-            # Préparer la requête pour l'API Ollama avec une instruction claire
-            logger.debug(f"Envoi de la requête à Ollama avec le message : {full_message}")
-            payload = {
-                "model": "gemma:2b",
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Vous êtes AgriBot, un assistant agricole expert. Votre rôle est de fournir des conseils pratiques et précis sur la plantation, "
-                            "l'entretien des cultures, la gestion des sols, les engrais, et les maladies des plantes. Répondez de manière structurée et concise :\n"
-                            "- Utilisez des en-têtes avec ### pour les sections (ex. ### Services, ### Conseils pratiques).\n"
-                            "- Présentez les informations sous forme de listes avec - pour chaque point.\n"
-                            "- Soyez clair, pratique et conversationnel."
-                        )
-                    },
-                    {
-                        "role": "user",
-                        "content": full_message
-                    }
-                ],
-                "stream": False,
-                "temperature": 0.7
-            }
+            # Instruction système pour Cohere
+            system_prompt = (
+                "Vous êtes AgriBot, un assistant agricole expert s'exprimant en français. Votre rôle est de fournir des réponses claires, pratiques et bien organisées sur la plantation, "
+                "l'entretien des cultures, la gestion des sols, les engrais et les maladies des plantes. Répondez de manière conversationnelle, en utilisant des paragraphes clairs et logiques, "
+                "comme si vous expliquiez à un agriculteur. Évitez les termes trop techniques ou confus, et assurez-vous que la réponse est facile à comprendre. Ne pas utiliser de mise en forme comme des en-têtes ou des listes à puces. "
+                "Adaptez-vous à la question posée et fournissez des informations précises et pertinentes. Si la question concerne une culture spécifique, donnez des étapes ou des conseils pratiques adaptés à cette culture."
+            )
 
-            # Envoyer la requête à Ollama avec un timeout
+            # Envoyer la requête à Cohere
             try:
-                logger.debug(f"Payload envoyé à Ollama : {payload}")
-                response = requests.post(OLLAMA_API_URL, json=payload)
-                response.raise_for_status()
-            except requests.RequestException as e:
-                logger.error(f"Erreur lors de la communication avec l'API Ollama : {e.__class__.__name__} - {str(e)}")
+                logger.debug(f"Envoi de la requête à Cohere avec le message : {full_message}")
+                response = co.generate(
+                    model="command",
+                    prompt=f"{system_prompt}\n\nQuestion de l'utilisateur : {full_message}",
+                    max_tokens=1500,  # Augmenter pour des réponses plus détaillées
+                    temperature=0.6,  # Réduire pour des réponses plus cohérentes
+                    k=0,  # Désactiver le top-k sampling pour plus de précision
+                    p=0.75  # Ajuster le top-p pour équilibrer créativité et pertinence
+                )
+                cohere_response = response.generations[0].text.strip()
+                logger.debug(f"Réponse de Cohere : {cohere_response}")
+
+                # Ajouter la réponse de Cohere
+                response_parts.append(cohere_response)
+
+            except Exception as e:
+                logger.error(f"Erreur lors de la communication avec l'API Cohere : {e}")
                 error_response = (
-                    "### AgriBot\n"
-                    "\n### Erreur\n"
-                    f"- Une erreur s'est produite avec l'API Ollama : {e.__class__.__name__} - {str(e)}.\n"
-                    "- Veuillez réessayer plus tard."
+                    f"Une erreur s'est produite lors de la génération de la réponse : {str(e)}. Veuillez réessayer plus tard."
                 )
                 chat = ChatMessage(
                     user_id=user_id,
@@ -126,26 +105,8 @@ def process_chat_message(user_id, message, conversation_id=None, image=None):
                 db.session.commit()
                 return error_response
 
-            # Extraire et structurer la réponse
-            response_data = response.json()
-            ollama_response = response_data["message"]["content"].strip()
-            logger.debug(f"Réponse d'Ollama : {ollama_response}")
-
-            # Ajouter la réponse d'Ollama
-            if response_parts and image:  # Si une image a été analysée
-                response_parts.append(
-                    "\n### Réponse à votre question\n"
-                    f"{ollama_response}"
-                )
-            else:
-                response_parts.append(f"\n{ollama_response}")
-
         # Combiner les parties en une réponse finale
-        final_response = "\n".join(response_parts)
-
-        # Limiter la longueur de la réponse
-        if len(final_response) > 500:
-            final_response = final_response[:500] + "... (réponse tronquée)"
+        final_response = "\n\n".join(response_parts)
 
         # Enregistrer dans la base de données
         chat = ChatMessage(
@@ -175,10 +136,7 @@ def process_chat_message(user_id, message, conversation_id=None, image=None):
         db.session.rollback()
         logger.error(f"Erreur inattendue dans process_chat_message : {e}")
         error_response = (
-            "### AgriBot\n"
-            "\n### Erreur\n"
-            "- Désolé, une erreur inattendue s'est produite.\n"
-            "- Veuillez réessayer plus tard."
+            "Désolé, une erreur inattendue s'est produite. Veuillez réessayer plus tard."
         )
         chat = ChatMessage(
             user_id=user_id,
