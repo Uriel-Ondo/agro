@@ -1,4 +1,3 @@
-```markdown
 # Configuration et Lancement du Projet
 
 ## Étape 1 : Créer un fichier `.env`
